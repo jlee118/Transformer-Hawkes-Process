@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.utils.data
+from torch.nn.utils.rnn import pad_sequence
 
 from transformer import Constants
 
@@ -74,3 +75,56 @@ def get_dataloader(data, batch_size, shuffle=True):
         shuffle=shuffle
     )
     return dl
+class MetaUniEventData(torch.utils.data.Dataset):
+    def __init__(self, tasks, task_labels, batch_size, k_shot):
+        """
+        Inputs:
+            inter_event_times - Array of Arrays of Numpy Arrays containing varying-length inter-event times
+            batch_size - Integer denoting number of tasks in a batch (non repeating?)
+            task_labels - Array of integers denoting the task of each sample
+        """
+        self.inputs = np.array([[x[:-1] for x in task] for task in tasks], dtype=object)
+        self.task_labels = np.array(task_labels)
+        self.targets = np.array([[x[1:] for x in task] for task in tasks], dtype=object)
+
+        # this might be wrong
+        self.batch_size = batch_size
+        self.k_shot = k_shot
+
+    def __len__(self):
+        # this might be wrong, needs to refer to length of data in a task probably
+        return self.batch_size
+
+    def create_batches(self):
+        """
+
+        """
+        self.support_batch = []
+        self.query_batch = []
+        for b in range(self.batch_size):  # for each batch
+            sampled_task = np.random.choice(np.unique(self.task_labels))
+            task_inds = np.where(self.task_labels == sampled_task)
+            same_dist_inputs = self.inputs[task_inds]
+            same_dist_outputs = self.inputs[task_inds]
+
+            sample_inds = np.random.choice(np.arange(len(same_dist_inputs)), self.k_shot, False)
+            np.random.shuffle(sample_inds)
+
+            support_inputs, support_outputs = pad_sequence(same_dist_inputs[sample_inds[:-1]]), pad_sequence(same_dist_outputs[:-1])
+            query_inputs, query_outputs = pad_sequence(same_dist_outputs[sample_inds[-1]]), pad_sequence(same_dist_outputs[-1])
+
+
+            self.support_batch.append((support_inputs, support_outputs))
+            self.query_batch.append((query_inputs, query_outputs))  # append sets to current sets
+
+    def __getitem__(self, idx):
+        # This is only getting the items (sets) in the current batch
+
+        support_inputs, support_outputs = self.support_batch[idx]
+        query_inputs, query_outputs = self.query_batch[idx]
+
+        return support_inputs, support_outputs, query_inputs, query_outputs
+
+
+
+
